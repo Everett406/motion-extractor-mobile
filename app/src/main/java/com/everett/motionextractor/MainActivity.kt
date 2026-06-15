@@ -17,7 +17,6 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
 import com.everett.motionextractor.ui.ExoPlayerManager
 import com.everett.motionextractor.ui.LocalExoPlayer
 import com.everett.motionextractor.ui.MotionExtractorApp
@@ -71,7 +70,7 @@ class MainActivity : ComponentActivity() {
     private fun setContentWithUri(uri: Uri?) {
         setContent {
             MotionExtractorTheme {
-                CompositionLocalProvider(LocalExoPlayer provides exoPlayerManager) {
+                CompositionLocalProvider(LocalExoPlayer provides exoPlayerManager.player) {
                     MotionExtractorApp(
                         lifecycleScope = lifecycleScope,
                         videoProcessor = videoProcessor,

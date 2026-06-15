@@ -7,16 +7,21 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 
-class ExoPlayerManager(context: Context) : ExoPlayer by ExoPlayer.Builder(context)
-    .build()
-    .apply {
-        repeatMode = Player.REPEAT_MODE_ONE
-        playWhenReady = true
-    } {
+class ExoPlayerManager(context: Context) {
+    val player: ExoPlayer = ExoPlayer.Builder(context)
+        .build()
+        .apply {
+            repeatMode = Player.REPEAT_MODE_ONE
+            playWhenReady = true
+        }
 
     fun setVideoUri(uri: Uri) {
-        setMediaItem(MediaItem.fromUri(uri))
-        prepare()
+        player.setMediaItem(MediaItem.fromUri(uri))
+        player.prepare()
+    }
+
+    fun release() {
+        player.release()
     }
 }
 
