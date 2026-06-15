@@ -52,7 +52,6 @@ import com.everett.motionextractor.VideoProcessor
 import com.everett.motionextractor.ui.LocalExoPlayer
 import com.everett.motionextractor.ui.Preset
 import com.everett.motionextractor.ui.VideoInfoSummary
-import com.everett.motionextractor.ui.applyPreset
 import com.everett.motionextractor.ui.theme.Background
 import com.everett.motionextractor.ui.theme.Danger
 import com.everett.motionextractor.ui.theme.GlassBackground
@@ -61,7 +60,6 @@ import com.everett.motionextractor.ui.theme.SurfaceElevated
 import com.everett.motionextractor.ui.theme.TextPrimary
 import com.everett.motionextractor.ui.theme.TextSecondary
 import com.everett.motionextractor.ui.theme.TextTertiary
-import com.everett.motionextractor.ui.toMotionExtractParams
 import io.github.alexzhirkevich.cupertino.CupertinoButton
 import io.github.alexzhirkevich.cupertino.CupertinoButtonDefaults
 import io.github.alexzhirkevich.cupertino.CupertinoSlider
