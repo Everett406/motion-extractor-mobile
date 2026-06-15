@@ -17,6 +17,13 @@ Android APK 版「运动提取」视频处理工具。
 - 导出处理后的视频（MP4）
 - 分享 / 保存到相册
 
+## 当前状态
+
+- ✅ 核心功能可用：选视频 → 生成预览 → 导出 → 播放/保存
+- ✅ CI 自动构建 Release APK 并发布到 GitHub Releases
+- ⚠️ UI/UX 仍在打磨中：Haze 毛玻璃位置、整体排版、交互细节存在较多问题
+- 📋 详见 [HANDOFF.md](./HANDOFF.md)、[KNOWN_ISSUES.md](./KNOWN_ISSUES.md)、[TODO.md](./TODO.md)
+
 ## 技术栈
 
 - 语言：Kotlin
@@ -42,7 +49,9 @@ motion-extractor-mobile/
 │   │       ├── ActionBar.kt
 │   │       ├── UiState.kt
 │   │       ├── ExoPlayerManager.kt
-│   │       └── theme/Theme.kt
+│   │       └── theme/
+│   │           ├── Color.kt
+│   │           └── Theme.kt
 │   └── src/main/res/             # 主题、图标、FileProvider 配置
 ├── scripts/
 │   ├── setup-opencv.sh           # CI / Linux / macOS 下载 OpenCV
@@ -50,6 +59,11 @@ motion-extractor-mobile/
 ├── gradle/                       # Gradle Wrapper
 ├── build.gradle.kts
 ├── settings.gradle.kts
+├── HANDOFF.md                    # 交接文档 / 当前状态总览
+├── KNOWN_ISSUES.md               # 已知问题清单
+├── TODO.md                       # 后续任务清单
+├── ARCHITECTURE.md               # 架构说明
+├── CHANGELOG.md                  # 变更历史
 └── README.md
 ```
 
@@ -93,7 +107,7 @@ bash scripts/setup-opencv.sh
 - 把 Java 模块放到 `opencv/sdk/`，供 Gradle 引用
 - 如果检测到 Android NDK，会同时把 `libc++_shared.so` 一起打包（OpenCV 的预编译库依赖它）
 
-### 3. 编译 Debug APK
+### 4. 编译 Debug APK
 
 ```bash
 ./gradlew assembleDebug
