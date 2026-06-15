@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -42,9 +43,21 @@ fun PreviewArea(
         contentAlignment = Alignment.Center
     ) {
         if (showPlayer && player != null) {
-            // Fixed: Use remember to avoid PlayerView recreation
-            PlayerViewContainer(
-                player = player,
+            // Fixed: AndroidView is a Composable, cannot be inside remember block
+            // Use AndroidView directly at Composable level
+            AndroidView(
+                factory = { context ->
+                    PlayerView(context).apply {
+                        this.player = player
+                        useController = true
+                    }
+                },
+                update = { view ->
+                    // Only update player if changed
+                    if (view.player != player) {
+                        view.player = player
+                    }
+                },
                 modifier = Modifier.fillMaxSize()
             )
         } else if (bitmaps.isNotEmpty()) {
@@ -93,33 +106,5 @@ private fun rememberVideoAspectRatio(videoInfo: VideoInfoSummary?): Float {
     } else {
         // Default 16:9 when no video selected
         16f / 9f
-    }
-}
-
-@Composable
-private fun PlayerViewContainer(
-    player: Player,
-    modifier: Modifier = Modifier
-) {
-    // Fixed: Remember PlayerView to avoid recreation on recomposition
-    androidx.compose.runtime.remember {
-        var playerViewRef: PlayerView? = null
-        
-        AndroidView(
-            factory = { context ->
-                PlayerView(context).apply {
-                    this.player = player
-                    useController = true
-                    playerViewRef = this
-                }
-            },
-            update = { view ->
-                // Only update player if changed
-                if (view.player != player) {
-                    view.player = player
-                }
-            },
-            modifier = modifier
-        )
     }
 }
