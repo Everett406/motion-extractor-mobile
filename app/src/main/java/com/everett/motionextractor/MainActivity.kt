@@ -295,7 +295,7 @@ class MainActivity : AppCompatActivity() {
         return when (degrees) {
             90 -> Mat().also { Core.rotate(mat, it, Core.ROTATE_90_CLOCKWISE) }
             180 -> Mat().also { Core.rotate(mat, it, Core.ROTATE_180) }
-            270 -> Mat().also { Core.rotate(mat, it, Core.ROTATE_90_COUNTER_CLOCKWISE) }
+            270 -> Mat().also { Core.rotate(mat, it, Core.ROTATE_90_COUNTERCLOCKWISE) }
             else -> mat
         }
     }
