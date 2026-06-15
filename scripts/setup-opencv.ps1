@@ -39,6 +39,40 @@ if (Test-Path $JniLibsDir) {
 New-Item -ItemType Directory -Force -Path $JniLibsDir | Out-Null
 Copy-Item -Path (Join-Path $SdkDir "sdk\native\libs\*") -Destination $JniLibsDir -Recurse -Force
 
+# OpenCV's prebuilt .so depends on libc++_shared.so, which the SDK does not ship.
+# Copy it from the Android NDK so the APK contains the required C++ runtime.
+Write-Host "Looking for Android NDK to bundle libc++_shared.so..."
+$NdkDir = $env:ANDROID_NDK_HOME
+if (-not $NdkDir) { $NdkDir = $env:ANDROID_NDK_ROOT }
+if ((-not $NdkDir) -and (Test-Path "$env:ANDROID_HOME\ndk")) {
+    $NdkDir = Get-ChildItem "$env:ANDROID_HOME\ndk" -Directory | Sort-Object Name | Select-Object -Last 1 | ForEach-Object { $_.FullName }
+}
+
+if ($NdkDir -and (Test-Path $NdkDir)) {
+    Write-Host "Using NDK: $NdkDir"
+    $HostPrebuilt = "windows-x86_64"
+    $AbiTriple = @{
+        "arm64-v8a"   = "aarch64-linux-android"
+        "armeabi-v7a" = "arm-linux-androideabi"
+        "x86"         = "i686-linux-android"
+        "x86_64"      = "x86_64-linux-android"
+    }
+    $SysrootLib = Join-Path $NdkDir "toolchains\llvm\prebuilt\$HostPrebuilt\sysroot\usr\lib"
+    foreach ($Abi in $AbiTriple.Keys) {
+        $Src = Join-Path $SysrootLib "$($AbiTriple[$Abi])\libc++_shared.so"
+        $Dst = Join-Path $JniLibsDir "$Abi\libc++_shared.so"
+        if (Test-Path $Src) {
+            Write-Host "  Copying libc++_shared.so for $Abi"
+            Copy-Item -Path $Src -Destination $Dst -Force
+        } else {
+            Write-Host "  Warning: libc++_shared.so not found for $Abi at $Src"
+        }
+    }
+} else {
+    Write-Host "Warning: Android NDK not found. libc++_shared.so will not be bundled."
+    Write-Host "Install the NDK or set ANDROID_NDK_HOME / ANDROID_NDK_ROOT."
+}
+
 # Make the OpenCV Java module available so settings.gradle.kts can include it.
 Write-Host "Linking OpenCV Java module..."
 $OpencvModuleDir = Join-Path $ProjectRoot "opencv"

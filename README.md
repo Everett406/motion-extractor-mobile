@@ -50,7 +50,17 @@ git clone https://github.com/Everett406/motion-extractor-mobile.git
 cd motion-extractor-mobile
 ```
 
-### 2. 下载 OpenCV Android SDK
+### 2. 准备 Android NDK（推荐）
+
+OpenCV 4.10.0 的预编译 `libopencv_java4.so` 依赖 NDK 提供的 C++ 共享运行时 `libc++_shared.so`。脚本会自动从已安装的 NDK 复制该库；如果本地没有 NDK，APK 在某些设备上会出现 `dlopen failed: library "libc++_shared.so" not found`。
+
+通过 Android Studio 的 SDK Manager 安装 **NDK (Side by side) 26.1.10909125**（或任意较新版本），或设置环境变量：
+
+```bash
+export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125
+```
+
+### 3. 下载 OpenCV Android SDK
 
 **Linux / macOS / Git Bash:**
 
@@ -69,6 +79,7 @@ bash scripts/setup-opencv.sh
 - 解压到 `opencv-sdk/`
 - 把 native so 库复制到 `app/src/main/jniLibs/`
 - 把 Java 模块放到 `opencv/sdk/`，供 Gradle 引用
+- 如果检测到 Android NDK，会同时把 `libc++_shared.so` 一起打包（OpenCV 的预编译库依赖它）
 
 ### 3. 编译 Debug APK
 
@@ -87,7 +98,7 @@ app/build/outputs/apk/debug/app-debug.apk
 仓库已配置 `.github/workflows/build.yml`：
 
 - 每次 push 到 `main` 分支会自动触发构建
-- CI 会自动下载并缓存 OpenCV SDK
+- CI 会自动安装 Android NDK、下载并缓存 OpenCV SDK
 - 构建 **Release APK** 并自动创建 GitHub Release
 - Release 中会上传已签名的 `app-release.apk`
 
