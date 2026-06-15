@@ -12,7 +12,7 @@ import android.os.Looper
 import android.text.method.ScrollingMovementMethod
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
+import android.app.AlertDialog
 
 /**
  * Captures errors and crashes, and shows a copyable dialog.

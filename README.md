@@ -20,7 +20,7 @@ Android APK 版「运动提取」视频处理工具。
 ## 技术栈
 
 - 语言：Kotlin
-- UI：Android XML Layout + Material3
+- UI：Jetpack Compose + iOS Cupertino（compose-cupertino）+ Haze 毛玻璃
 - 视频/图像处理：OpenCV Android SDK
 - 构建：Gradle + Android Gradle Plugin 8.3
 - CI/CD：GitHub Actions（自动编译 APK）
@@ -32,10 +32,18 @@ motion-extractor-mobile/
 ├── .github/workflows/build.yml   # GitHub Actions 构建配置
 ├── app/                          # Android 应用模块
 │   ├── src/main/java/com/everett/motionextractor/
-│   │   ├── MainActivity.kt       # 主界面与交互
+│   │   ├── MainActivity.kt       # Compose 入口与 ExoPlayer 生命周期
 │   │   ├── MotionExtractor.kt    # 运动提取核心算法
-│   │   └── VideoProcessor.kt     # 视频读取/写入封装
-│   └── src/main/res/             # 布局、样式、图标
+│   │   ├── VideoProcessor.kt     # 视频读取/写入封装
+│   │   └── ui/                   # Compose UI（Cupertino + Haze）
+│   │       ├── MainScreen.kt
+│   │       ├── ParameterPanel.kt
+│   │       ├── PreviewArea.kt
+│   │       ├── ActionBar.kt
+│   │       ├── UiState.kt
+│   │       ├── ExoPlayerManager.kt
+│   │       └── theme/Theme.kt
+│   └── src/main/res/             # 主题、图标、FileProvider 配置
 ├── scripts/
 │   ├── setup-opencv.sh           # CI / Linux / macOS 下载 OpenCV
 │   └── setup-opencv.ps1          # Windows 下载 OpenCV
