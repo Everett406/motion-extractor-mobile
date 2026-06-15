@@ -17,23 +17,21 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
 import com.everett.motionextractor.ui.ExoPlayerManager
 import com.everett.motionextractor.ui.LocalExoPlayer
 import com.everett.motionextractor.ui.MotionExtractorApp
 import com.everett.motionextractor.ui.theme.MotionExtractorTheme
+import org.opencv.android.OpenCVLoader
 import java.io.File
 import java.io.FileOutputStream
-import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var videoProcessor: VideoProcessor
     private lateinit var exoPlayerManager: ExoPlayerManager
 
-    private var pendingVideoUri: Uri? = null
+    private var pendingSaveFile: File? = null
     private val openCvReady: Boolean
         get() = OpenCVLoader.initLocal()
 
@@ -43,7 +41,7 @@ class MainActivity : ComponentActivity() {
     ) { permissions ->
         val allGranted = permissions.entries.all { it.value }
         if (allGranted) {
-            pendingVideoUri?.let { saveToGallery(it) }
+            pendingSaveFile?.let { saveToGallery(it) }
         } else {
             Toast.makeText(this, "需要存储权限才能保存视频", Toast.LENGTH_SHORT).show()
         }
@@ -54,7 +52,6 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            pendingVideoUri = it
             // Recreate content to pass the new URI
             setContentWithUri(it)
         }
@@ -122,7 +119,7 @@ class MainActivity : ComponentActivity() {
                 sendBroadcast(Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(destFile)))
                 Toast.makeText(this, "已保存到相册", Toast.LENGTH_SHORT).show()
             } else {
-                pendingVideoUri = Uri.fromFile(file)
+                pendingSaveFile = file
                 permissionLauncher.launch(
                     arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                 )

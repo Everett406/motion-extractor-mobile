@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import com.everett.motionextractor.ui.LocalExoPlayer
+import com.everett.motionextractor.ui.setVideoUri
 import com.everett.motionextractor.ui.theme.Background
 import com.everett.motionextractor.ui.theme.Primary
 import com.everett.motionextractor.ui.theme.SurfaceElevated

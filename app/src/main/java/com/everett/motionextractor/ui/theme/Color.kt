@@ -23,6 +23,7 @@ val Warning = Color(0xFFFF9F0A)
 // Glass effect colors
 val GlassBackground = Color(0xFF1C1C1E).copy(alpha = 0.75f)
 val GlassBorder = Color.White.copy(alpha = 0.1f)
+val GlassTint = Color(0xFF1C1C1E).copy(alpha = 0.5f)
 
 // Preset colors
 val PresetClassic = Color(0xFF8E8E93)
