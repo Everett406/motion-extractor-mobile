@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Motion Extractor</string>
+    <string name="pick_video">选择视频</string>
+    <string name="preview">生成预览</string>
+    <string name="export">导出视频</string>
+    <string name="save">保存到相册</string>
+    <string name="offset_frames">帧偏移</string>
+    <string name="opacity">不透明度</string>
+    <string name="blur">高斯模糊</string>
+    <string name="glow_radius">发光半径</string>
+    <string name="glow_intensity">发光强度</string>
+    <string name="contrast">对比度</string>
+    <string name="brightness">亮度</string>
+    <string name="mode">输出模式</string>
+    <string name="invert">反色偏移层</string>
+</resources>
