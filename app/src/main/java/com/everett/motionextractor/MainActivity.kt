@@ -198,12 +198,17 @@ class MainActivity : AppCompatActivity() {
     private fun saveToGallery() {
         val file = lastOutputFile ?: return
 
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q && !checkStoragePermission()) {
+            requestStoragePermission()
+            return
+        }
+
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
                 try {
                     val values = ContentValues().apply {
-                        put(MediaStore.Video.Media.DISPLAY_NAME, "motion_extract_${System.currentTimeMillis()}.avi")
-                        put(MediaStore.Video.Media.MIME_TYPE, "video/x-msvideo")
+                        put(MediaStore.Video.Media.DISPLAY_NAME, "motion_extract_${System.currentTimeMillis()}.mp4")
+                        put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
                         put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/MotionExtractor")
                     }
                     val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
@@ -232,7 +237,7 @@ class MainActivity : AppCompatActivity() {
             file
         )
         val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "video/*"
+            type = "video/mp4"
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
@@ -265,22 +270,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun checkStoragePermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VIDEO) ==
-                    PackageManager.PERMISSION_GRANTED
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            true
         } else {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) ==
+            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
                     PackageManager.PERMISSION_GRANTED
         }
     }
 
     private fun requestStoragePermission() {
-        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            Manifest.permission.READ_MEDIA_VIDEO
-        } else {
-            Manifest.permission.READ_EXTERNAL_STORAGE
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            requestPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
-        requestPermissionLauncher.launch(permission)
     }
 
     private fun initializeOpenCV(): Boolean {
