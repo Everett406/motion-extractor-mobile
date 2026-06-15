@@ -74,7 +74,13 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        if (!OpenCVLoader.initLocal()) {
+        try {
+            System.loadLibrary("opencv_java4")
+        } catch (e: UnsatisfiedLinkError) {
+            e.printStackTrace()
+        }
+
+        if (!OpenCVLoader.initDebug()) {
             Toast.makeText(this, "OpenCV 初始化失败", Toast.LENGTH_LONG).show()
         }
 

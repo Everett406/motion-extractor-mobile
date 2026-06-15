@@ -88,8 +88,30 @@ app/build/outputs/apk/debug/app-debug.apk
 
 - 每次 push 到 `main` 分支会自动触发构建
 - CI 会自动下载并缓存 OpenCV SDK
-- 构建完成后，APK 作为 Artifact 上传
-- 你可以在 Actions 页面下载 `motion-extractor-debug-apk`
+- 构建 **Release APK** 并自动创建 GitHub Release
+- Release 中会上传已签名的 `app-release.apk`
+
+### 配置签名密钥
+
+CI 使用 GitHub Secrets 对 Release APK 签名。需要添加以下 4 个 Secrets：
+
+| Secret 名称 | 说明 |
+|-------------|------|
+| `RELEASE_KEYSTORE` | 签名 keystore 文件的 Base64 编码 |
+| `RELEASE_KEYSTORE_PASSWORD` | keystore 密码 |
+| `RELEASE_KEY_ALIAS` | key alias |
+| `RELEASE_KEY_PASSWORD` | key 密码 |
+
+生成 keystore 并获取 Base64 示例：
+
+```bash
+keytool -genkey -v -keystore release.keystore -alias motionextractor \
+  -keyalg RSA -keysize 2048 -validity 10000
+
+base64 -w 0 release.keystore
+```
+
+把输出的 Base64 字符串添加到仓库 Settings → Secrets and variables → Actions → New repository secret。
 
 手动触发：进入仓库 → Actions → Build Android APK → Run workflow。
 

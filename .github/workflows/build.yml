@@ -48,14 +48,28 @@ jobs:
       - name: Grant execute permission for Gradlew
         run: chmod +x gradlew
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Decode release keystore
+        env:
+          RELEASE_KEYSTORE: ${{ secrets.RELEASE_KEYSTORE }}
+        run: |
+          if [ -n "$RELEASE_KEYSTORE" ]; then
+            echo "$RELEASE_KEYSTORE" | base64 -d > app/release.keystore
+          else
+            echo "WARNING: RELEASE_KEYSTORE secret not set. Release build will fail."
+          fi
+
+      - name: Build release APK
+        env:
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: motion-extractor-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: motion-extractor-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
 
       - name: Create Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -65,9 +79,9 @@ jobs:
           name: Motion Extractor v1.0.${{ github.run_number }}
           draft: false
           prerelease: false
-          files: app/build/outputs/apk/debug/app-debug.apk
+          files: app/build/outputs/apk/release/app-release.apk
           body: |
-            自动构建的 Android APK（Debug）。
+            自动构建的 Android Release APK（已签名）。
 
             安装后从相册选择视频，调节参数即可预览/导出「运动提取」效果。
 
