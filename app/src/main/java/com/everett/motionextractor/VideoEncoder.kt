@@ -5,15 +5,13 @@ import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.media.MediaMuxer
-import android.view.Surface
 import org.opencv.core.Mat
 import java.io.File
 import java.nio.ByteBuffer
 
 /**
  * Encodes BGR [Mat] frames to an MP4 file using Android's MediaCodec +
- * MediaMuxer. Input is supplied through a Surface; frames are rendered by
- * drawing a Bitmap onto that Surface.
+ * MediaMuxer. Frames are fed as YUV_420_888 images via [MediaCodec.getInputImage].
  */
 class VideoEncoder(
     outputFile: File,
@@ -25,7 +23,6 @@ class VideoEncoder(
 
     private val encoder: MediaCodec
     private val muxer: MediaMuxer
-    private val inputSurface: Surface
     private val bufferInfo = MediaCodec.BufferInfo()
     private var trackIndex = -1
     private var muxerStarted = false
@@ -33,8 +30,9 @@ class VideoEncoder(
     private val frameIntervalUs = (1_000_000.0 / fps).toLong()
 
     init {
+        val colorFormat = selectColorFormat()
         val format = MediaFormat.createVideoFormat("video/avc", width, height).apply {
-            setInteger(MediaFormat.KEY_COLOR_FORMAT, selectColorFormat())
+            setInteger(MediaFormat.KEY_COLOR_FORMAT, colorFormat)
             setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
             setInteger(MediaFormat.KEY_FRAME_RATE, fps.toInt().coerceAtLeast(1))
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
@@ -42,7 +40,6 @@ class VideoEncoder(
 
         encoder = MediaCodec.createEncoderByType("video/avc")
         encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        inputSurface = encoder.createInputSurface()
         encoder.start()
 
         muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
@@ -52,15 +49,25 @@ class VideoEncoder(
      * Encode a single BGR frame.
      */
     fun encodeFrame(mat: Mat) {
-        val bitmap = MatToBitmapConverter.toBitmap(mat)
-        val canvas = inputSurface.lockCanvas(null)
-            ?: throw RuntimeException("Cannot lock encoder surface")
-        try {
-            canvas.drawBitmap(bitmap, 0f, 0f, null)
-        } finally {
-            inputSurface.unlockCanvasAndPost(canvas)
+        val i420 = Yuv420Converter.matToI420(mat)
+
+        val inputBufferId = encoder.dequeueInputBuffer(TIMEOUT_US)
+        if (inputBufferId < 0) {
+            throw RuntimeException("Encoder input buffer unavailable")
         }
-        bitmap.recycle()
+
+        val image = encoder.getInputImage(inputBufferId)
+            ?: throw RuntimeException("Encoder input image is null")
+
+        Yuv420Converter.i420ToImage(i420, image)
+
+        encoder.queueInputBuffer(
+            inputBufferId,
+            0,
+            image.planes.fold(0) { acc, plane -> acc + plane.buffer.remaining() },
+            frameIndex * frameIntervalUs,
+            0
+        )
 
         drainEncoder(false)
         frameIndex++
@@ -70,6 +77,16 @@ class VideoEncoder(
      * Signal end-of-stream and finish muxing.
      */
     fun finish() {
+        val inputBufferId = encoder.dequeueInputBuffer(TIMEOUT_US)
+        if (inputBufferId >= 0) {
+            encoder.queueInputBuffer(
+                inputBufferId,
+                0,
+                0,
+                frameIndex * frameIntervalUs,
+                MediaCodec.BUFFER_FLAG_END_OF_STREAM
+            )
+        }
         drainEncoder(true)
     }
 
@@ -95,24 +112,16 @@ class VideoEncoder(
         val codecInfo = codecList.codecInfos.first { it.name == codecName }
         val capabilities = codecInfo.getCapabilitiesForType("video/avc")
 
-        return capabilities.colorFormats.firstOrNull { it == COLOR_FORMAT_SURFACE }
-            ?: capabilities.colorFormats.firstOrNull {
-                it == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible
-            }
-            ?: capabilities.colorFormats.firstOrNull {
-                it == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar
-            }
-            ?: capabilities.colorFormats.firstOrNull {
-                it == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar
-            }
-            ?: throw RuntimeException("No supported YUV420 color format")
+        return capabilities.colorFormats.firstOrNull {
+            it == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible
+        } ?: capabilities.colorFormats.firstOrNull {
+            it == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar
+        } ?: capabilities.colorFormats.firstOrNull {
+            it == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar
+        } ?: throw RuntimeException("No supported YUV420 color format")
     }
 
     private fun drainEncoder(endOfStream: Boolean) {
-        if (endOfStream) {
-            encoder.signalEndOfInputStream()
-        }
-
         while (true) {
             val outputBufferId = encoder.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
             when {
@@ -158,7 +167,5 @@ class VideoEncoder(
 
     companion object {
         private const val TIMEOUT_US = 10000L
-        private const val COLOR_FORMAT_SURFACE =
-            MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
     }
 }
