@@ -1,0 +1,22 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Local configuration
+local.properties
+
+# Android Studio
+.idea/
+*.iml
+.DS_Store
+
+# Temp files
+temp/
+opencv-sdk/
+opencv/
+app/src/main/jniLibs/
+*.log
+
+# OS
+Thumbs.db
