@@ -14,4 +14,13 @@
     <string name="brightness">亮度</string>
     <string name="mode">输出模式</string>
     <string name="invert">反色偏移层</string>
+    <string name="use_rgb_offsets">RGB 通道分离拖影</string>
+    <string name="rgb_offset_r">红色偏移</string>
+    <string name="rgb_offset_g">绿色偏移</string>
+    <string name="rgb_offset_b">蓝色偏移</string>
+    <string name="preset_classic">经典</string>
+    <string name="preset_neon">霓虹</string>
+    <string name="preset_high_contrast">高对比</string>
+    <string name="preset_soft">柔和</string>
+    <string name="preset_reset">重置</string>
 </resources>

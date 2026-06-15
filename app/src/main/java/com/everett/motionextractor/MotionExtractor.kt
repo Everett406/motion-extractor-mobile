@@ -20,7 +20,15 @@ data class MotionExtractParams(
     val glowIntensity: Double = 0.5,
     val contrast: Double = 1.0,
     val brightness: Double = 0.0,
-    val mode: OutputMode = OutputMode.GRAYSCALE
+    val mode: OutputMode = OutputMode.GRAYSCALE,
+    val useRgbOffsets: Boolean = false,
+    val rgbOffsets: RgbOffsets = RgbOffsets()
+)
+
+data class RgbOffsets(
+    val r: Int = 0,
+    val g: Int = 0,
+    val b: Int = 0
 )
 
 enum class OutputMode {
@@ -32,12 +40,34 @@ object MotionExtractor {
     /**
      * Process a single pair of frames.
      *
-     * @param current current frame in BGR / RGBA
+     * @param current current frame in BGR
      * @param offset frame at [offsetFrames] ahead
      * @param params processing parameters
      * @return processed frame, 8-bit 3-channel BGR
      */
     fun processFrame(current: Mat, offset: Mat, params: MotionExtractParams): Mat {
+        return processFrame(current, offset, null, null, null, params)
+    }
+
+    /**
+     * Process with optional per-channel RGB offsets (artistic rainbow trails).
+     *
+     * @param current current frame in BGR
+     * @param offset main offset frame
+     * @param offsetR red channel offset frame (null = use main offset)
+     * @param offsetG green channel offset frame (null = use main offset)
+     * @param offsetB blue channel offset frame (null = use main offset)
+     * @param params processing parameters
+     * @return processed frame, 8-bit 3-channel BGR
+     */
+    fun processFrame(
+        current: Mat,
+        offset: Mat,
+        offsetR: Mat?,
+        offsetG: Mat?,
+        offsetB: Mat?,
+        params: MotionExtractParams
+    ): Mat {
         val cur = Mat()
         val off = Mat()
         current.convertTo(cur, CvType.CV_32F, 1.0 / 255.0)
@@ -49,7 +79,7 @@ object MotionExtractor {
             Imgproc.GaussianBlur(off, off, kernelSize(params.blurRadius), params.blurRadius)
         }
 
-        // Invert the offset frame if requested.
+        // Base motion extraction: blend current with inverted offset.
         val offInv = Mat()
         if (params.invert) {
             Core.subtract(Mat.ones(off.size(), off.type()), off, offInv)
@@ -57,33 +87,83 @@ object MotionExtractor {
             off.copyTo(offInv)
         }
 
-        // Blend current and inverted offset: result = (1-opacity)*cur + opacity*offInv
+        val opacity = params.opacity.coerceIn(0.0, 1.0)
         val result = Mat()
-        Core.addWeighted(cur, 1.0 - params.opacity, offInv, params.opacity, 0.0, result)
+        Core.addWeighted(cur, 1.0 - opacity, offInv, opacity, 0.0, result)
+
+        // Per-channel RGB offsets (artistic rainbow trails).
+        val rgbResult = if (params.useRgbOffsets) {
+            val channels = mutableListOf<Mat>()
+            val channelOffsets = listOf(offsetR, offsetG, offsetB)
+            for (ci in 0..2) {
+                val offChannel = channelOffsets[ci]
+                if (offChannel == null || offChannel.empty()) {
+                    // Fallback to the regular result channel.
+                    val ch = Mat()
+                    Core.extractChannel(result, ch, ci)
+                    channels.add(ch)
+                } else {
+                    val offC = Mat()
+                    offChannel.convertTo(offC, CvType.CV_32F, 1.0 / 255.0)
+                    if (params.blurRadius > 0.5) {
+                        Imgproc.GaussianBlur(offC, offC, kernelSize(params.blurRadius), params.blurRadius)
+                    }
+                    val curChannel = Mat()
+                    val offChannelMat = Mat()
+                    Core.extractChannel(cur, curChannel, ci)
+                    Core.extractChannel(offC, offChannelMat, ci)
+                    val channel = Mat()
+                    Core.absdiff(curChannel, offChannelMat, channel)
+                    Core.multiply(channel, Mat(channel.size(), channel.type(), org.opencv.core.Scalar.all(3.0)), channel)
+                    Core.min(channel, Mat.ones(channel.size(), channel.type()), channel)
+                    channels.add(channel)
+                    curChannel.release()
+                    offChannelMat.release()
+                    offC.release()
+                }
+            }
+            val merged = Mat()
+            Core.merge(channels, merged)
+            for (ch in channels) ch.release()
+            merged
+        } else {
+            result
+        }
 
         // Post contrast / brightness.
-        // result = (result - 0.5) * contrast + 0.5 + brightness
-        Core.subtract(result, Mat(result.size(), result.type(), org.opencv.core.Scalar.all(0.5)), result)
-        Core.multiply(result, Mat(result.size(), result.type(), org.opencv.core.Scalar.all(params.contrast)), result)
-        Core.add(result, Mat(result.size(), result.type(), org.opencv.core.Scalar.all(0.5 + params.brightness)), result)
-        Core.min(result, Mat.ones(result.size(), result.type()), result)
-        Core.max(result, Mat.zeros(result.size(), result.type()), result)
+        Core.subtract(
+            rgbResult,
+            Mat(rgbResult.size(), rgbResult.type(), org.opencv.core.Scalar.all(0.5)),
+            rgbResult
+        )
+        Core.multiply(
+            rgbResult,
+            Mat(rgbResult.size(), rgbResult.type(), org.opencv.core.Scalar.all(params.contrast)),
+            rgbResult
+        )
+        Core.add(
+            rgbResult,
+            Mat(rgbResult.size(), rgbResult.type(), org.opencv.core.Scalar.all(0.5 + params.brightness)),
+            rgbResult
+        )
+        Core.min(rgbResult, Mat.ones(rgbResult.size(), rgbResult.type()), rgbResult)
+        Core.max(rgbResult, Mat.zeros(rgbResult.size(), rgbResult.type()), rgbResult)
 
         // Output mode.
         val converted = when (params.mode) {
             OutputMode.GRAYSCALE -> {
                 val gray = Mat()
-                result.convertTo(gray, CvType.CV_8U, 255.0)
+                rgbResult.convertTo(gray, CvType.CV_8U, 255.0)
                 Imgproc.cvtColor(gray, gray, Imgproc.COLOR_BGR2GRAY)
                 Imgproc.cvtColor(gray, gray, Imgproc.COLOR_GRAY2BGR)
-                gray.convertTo(result, CvType.CV_32F, 1.0 / 255.0)
-                result
+                gray.convertTo(rgbResult, CvType.CV_32F, 1.0 / 255.0)
+                rgbResult
             }
             OutputMode.INVERTED -> {
-                Core.subtract(Mat.ones(result.size(), result.type()), result, result)
-                result
+                Core.subtract(Mat.ones(rgbResult.size(), rgbResult.type()), rgbResult, rgbResult)
+                rgbResult
             }
-            else -> result
+            else -> rgbResult
         }
 
         // Glow effect based on motion magnitude.
@@ -99,7 +179,11 @@ object MotionExtractor {
             diff.release()
 
             Imgproc.GaussianBlur(motion, motion, kernelSize(params.glowRadius), params.glowRadius)
-            Core.multiply(motion, Mat(motion.size(), motion.type(), org.opencv.core.Scalar.all(params.glowIntensity)), motion)
+            Core.multiply(
+                motion,
+                Mat(motion.size(), motion.type(), org.opencv.core.Scalar.all(params.glowIntensity)),
+                motion
+            )
             Core.min(motion, Mat.ones(motion.size(), motion.type()), motion)
 
             val glow = Mat()
@@ -117,6 +201,7 @@ object MotionExtractor {
         cur.release()
         off.release()
         offInv.release()
+        if (rgbResult != result) rgbResult.release()
         result.release()
 
         return output

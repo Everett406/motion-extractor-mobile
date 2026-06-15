@@ -75,7 +75,7 @@ class VideoProcessor(private val context: Context) {
             val total = decoder.frameCount.coerceAtLeast(count)
             val result = mutableListOf<Mat>()
             val buffer = ArrayDeque<Mat>()
-            val maxOffset = params.offsetFrames.coerceAtLeast(1)
+            val maxOffset = computeMaxOffset(params)
 
             // Pre-fill the offset buffer.
             repeat(maxOffset + 1) {
@@ -88,9 +88,7 @@ class VideoProcessor(private val context: Context) {
 
             while (buffer.isNotEmpty() && result.size < count) {
                 if (frameIndex >= nextPreviewIndex) {
-                    val current = buffer.first()
-                    val offset = buffer.getOrNull(maxOffset) ?: current
-                    val processed = MotionExtractor.processFrame(current, offset, params)
+                    val processed = processBufferedFrame(buffer, params)
                     result.add(processed)
                     nextPreviewIndex += step
                 }
@@ -125,7 +123,7 @@ class VideoProcessor(private val context: Context) {
                 decoder.fps
             ).use { encoder ->
                 val buffer = ArrayDeque<Mat>()
-                val maxOffset = params.offsetFrames
+                val maxOffset = computeMaxOffset(params)
 
                 // Pre-fill the offset buffer.
                 repeat(maxOffset + 1) {
@@ -133,25 +131,13 @@ class VideoProcessor(private val context: Context) {
                 }
 
                 var processedCount = 0
-                val current = Mat()
-                val offset = Mat()
 
                 while (buffer.isNotEmpty()) {
-                    buffer.removeFirst().apply {
-                        copyTo(current)
-                        release()
-                    }
+                    val processed = processBufferedFrame(buffer, params)
 
+                    buffer.removeFirst().release()
                     decoder.readFrame()?.let { (mat, _) -> buffer.add(mat) }
 
-                    val offsetIndex = params.offsetFrames.coerceAtMost(buffer.size - 1)
-                    if (offsetIndex >= 0) {
-                        buffer[offsetIndex].copyTo(offset)
-                    } else {
-                        current.copyTo(offset)
-                    }
-
-                    val processed = MotionExtractor.processFrame(current, offset, params)
                     encoder.encodeFrame(processed)
                     processed.release()
 
@@ -161,8 +147,6 @@ class VideoProcessor(private val context: Context) {
                     }
                 }
 
-                current.release()
-                offset.release()
                 buffer.forEach { it.release() }
                 encoder.finish()
                 onProgress(1.0f)
@@ -170,5 +154,42 @@ class VideoProcessor(private val context: Context) {
         }
 
         return outputFile
+    }
+
+    /**
+     * Compute the largest offset we need to keep in the lookahead buffer.
+     */
+    private fun computeMaxOffset(params: MotionExtractParams): Int {
+        return if (params.useRgbOffsets) {
+            maxOf(
+                params.offsetFrames,
+                params.rgbOffsets.r,
+                params.rgbOffsets.g,
+                params.rgbOffsets.b,
+                1
+            )
+        } else {
+            params.offsetFrames.coerceAtLeast(1)
+        }
+    }
+
+    /**
+     * Process the first frame in the buffer using the appropriate offsets.
+     */
+    private fun processBufferedFrame(buffer: ArrayDeque<Mat>, params: MotionExtractParams): Mat {
+        val current = buffer.first()
+        val mainOffset = buffer.getOrNull(params.offsetFrames) ?: current
+
+        val offsetR = if (params.useRgbOffsets && params.rgbOffsets.r > 0) {
+            buffer.getOrNull(params.rgbOffsets.r)
+        } else null
+        val offsetG = if (params.useRgbOffsets && params.rgbOffsets.g > 0) {
+            buffer.getOrNull(params.rgbOffsets.g)
+        } else null
+        val offsetB = if (params.useRgbOffsets && params.rgbOffsets.b > 0) {
+            buffer.getOrNull(params.rgbOffsets.b)
+        } else null
+
+        return MotionExtractor.processFrame(current, mainOffset, offsetR, offsetG, offsetB, params)
     }
 }

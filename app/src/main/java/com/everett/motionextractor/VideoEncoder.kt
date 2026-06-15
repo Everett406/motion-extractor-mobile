@@ -11,7 +11,11 @@ import java.nio.ByteBuffer
 
 /**
  * Encodes BGR [Mat] frames to an MP4 file using Android's MediaCodec +
- * MediaMuxer. Frames are fed as YUV_420_888 images via [MediaCodec.getInputImage].
+ * MediaMuxer.
+ *
+ * Prefers planar YUV input (I420) so frames can be supplied as a single byte
+ * buffer without per-pixel interleaving. Falls back to YUV_420_888 image input
+ * if planar is not available.
  */
 class VideoEncoder(
     outputFile: File,
@@ -28,9 +32,13 @@ class VideoEncoder(
     private var muxerStarted = false
     private var frameIndex = 0L
     private val frameIntervalUs = (1_000_000.0 / fps).toLong()
+    private val useImageInput: Boolean
+    private val yuvBuffer: ByteArray
 
     init {
         val colorFormat = selectColorFormat()
+        useImageInput = (colorFormat == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
+
         val format = MediaFormat.createVideoFormat("video/avc", width, height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, colorFormat)
             setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
@@ -43,31 +51,44 @@ class VideoEncoder(
         encoder.start()
 
         muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        yuvBuffer = ByteArray((width * height * 1.5).toInt())
     }
 
     /**
      * Encode a single BGR frame.
      */
     fun encodeFrame(mat: Mat) {
-        val i420 = Yuv420Converter.matToI420(mat)
+        Yuv420Converter.matToI420(mat, yuvBuffer)
 
         val inputBufferId = encoder.dequeueInputBuffer(TIMEOUT_US)
         if (inputBufferId < 0) {
             throw RuntimeException("Encoder input buffer unavailable")
         }
 
-        val image = encoder.getInputImage(inputBufferId)
-            ?: throw RuntimeException("Encoder input image is null")
-
-        Yuv420Converter.i420ToImage(i420, image)
-
-        encoder.queueInputBuffer(
-            inputBufferId,
-            0,
-            image.planes.fold(0) { acc, plane -> acc + plane.buffer.remaining() },
-            frameIndex * frameIntervalUs,
-            0
-        )
+        if (useImageInput) {
+            val image = encoder.getInputImage(inputBufferId)
+                ?: throw RuntimeException("Encoder input image is null")
+            Yuv420Converter.i420ToImage(yuvBuffer, image)
+            encoder.queueInputBuffer(
+                inputBufferId,
+                0,
+                yuvBuffer.size,
+                frameIndex * frameIntervalUs,
+                0
+            )
+        } else {
+            val buffer = encoder.getInputBuffer(inputBufferId)
+                ?: throw RuntimeException("Encoder input buffer is null")
+            buffer.clear()
+            buffer.put(yuvBuffer)
+            encoder.queueInputBuffer(
+                inputBufferId,
+                0,
+                yuvBuffer.size,
+                frameIndex * frameIntervalUs,
+                0
+            )
+        }
 
         drainEncoder(false)
         frameIndex++
@@ -112,12 +133,13 @@ class VideoEncoder(
         val codecInfo = codecList.codecInfos.first { it.name == codecName }
         val capabilities = codecInfo.getCapabilitiesForType("video/avc")
 
+        // Prefer planar (fast byte-buffer input). Fall back to flexible image input.
         return capabilities.colorFormats.firstOrNull {
+            it == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar
+        } ?: capabilities.colorFormats.firstOrNull {
             it == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible
         } ?: capabilities.colorFormats.firstOrNull {
             it == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar
-        } ?: capabilities.colorFormats.firstOrNull {
-            it == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar
         } ?: throw RuntimeException("No supported YUV420 color format")
     }
 

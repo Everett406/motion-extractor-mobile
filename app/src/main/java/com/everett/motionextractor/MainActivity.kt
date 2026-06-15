@@ -13,12 +13,15 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.ImageView
 import android.widget.ProgressBar
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.slider.Slider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -46,6 +49,22 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sliderContrast: Slider
     private lateinit var sliderBrightness: Slider
     private lateinit var cbInvert: CheckBox
+
+    private lateinit var rgMode: RadioGroup
+    private lateinit var rbColor: RadioButton
+    private lateinit var rbGrayscale: RadioButton
+    private lateinit var rbInverted: RadioButton
+
+    private lateinit var cbRgbOffsets: CheckBox
+    private lateinit var sliderOffsetR: Slider
+    private lateinit var sliderOffsetG: Slider
+    private lateinit var sliderOffsetB: Slider
+
+    private lateinit var btnPresetClassic: MaterialButton
+    private lateinit var btnPresetNeon: MaterialButton
+    private lateinit var btnPresetHighContrast: MaterialButton
+    private lateinit var btnPresetSoft: MaterialButton
+    private lateinit var btnPresetReset: MaterialButton
 
     private var selectedUri: Uri? = null
     private var lastOutputFile: java.io.File? = null
@@ -85,6 +104,7 @@ class MainActivity : AppCompatActivity() {
         videoProcessor = VideoProcessor(this)
         bindViews()
         setupListeners()
+        updateRgbOffsetSliderState()
     }
 
     private fun bindViews() {
@@ -105,6 +125,22 @@ class MainActivity : AppCompatActivity() {
         sliderContrast = findViewById(R.id.sliderContrast)
         sliderBrightness = findViewById(R.id.sliderBrightness)
         cbInvert = findViewById(R.id.cbInvert)
+
+        rgMode = findViewById(R.id.rgMode)
+        rbColor = findViewById(R.id.rbColor)
+        rbGrayscale = findViewById(R.id.rbGrayscale)
+        rbInverted = findViewById(R.id.rbInverted)
+
+        cbRgbOffsets = findViewById(R.id.cbRgbOffsets)
+        sliderOffsetR = findViewById(R.id.sliderOffsetR)
+        sliderOffsetG = findViewById(R.id.sliderOffsetG)
+        sliderOffsetB = findViewById(R.id.sliderOffsetB)
+
+        btnPresetClassic = findViewById(R.id.btnPresetClassic)
+        btnPresetNeon = findViewById(R.id.btnPresetNeon)
+        btnPresetHighContrast = findViewById(R.id.btnPresetHighContrast)
+        btnPresetSoft = findViewById(R.id.btnPresetSoft)
+        btnPresetReset = findViewById(R.id.btnPresetReset)
     }
 
     private fun setupListeners() {
@@ -123,6 +159,23 @@ class MainActivity : AppCompatActivity() {
         btnSave.setOnClickListener {
             saveToGallery()
         }
+
+        cbRgbOffsets.setOnCheckedChangeListener { _, _ ->
+            updateRgbOffsetSliderState()
+        }
+
+        btnPresetClassic.setOnClickListener { applyPreset(Preset.CLASSIC) }
+        btnPresetNeon.setOnClickListener { applyPreset(Preset.NEON) }
+        btnPresetHighContrast.setOnClickListener { applyPreset(Preset.HIGH_CONTRAST) }
+        btnPresetSoft.setOnClickListener { applyPreset(Preset.SOFT) }
+        btnPresetReset.setOnClickListener { applyPreset(Preset.RESET) }
+    }
+
+    private fun updateRgbOffsetSliderState() {
+        val enabled = cbRgbOffsets.isChecked
+        sliderOffsetR.isEnabled = enabled
+        sliderOffsetG.isEnabled = enabled
+        sliderOffsetB.isEnabled = enabled
     }
 
     private fun showVideoInfo(uri: Uri) {
@@ -149,18 +202,44 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (frames.isNotEmpty()) {
-                val middle = frames[frames.size / 2]
-                val bitmap = android.graphics.Bitmap.createBitmap(
-                    middle.cols(), middle.rows(),
-                    android.graphics.Bitmap.Config.ARGB_8888
-                )
-                Utils.matToBitmap(middle, bitmap)
-                ivPreview.setImageBitmap(bitmap)
+                val collage = createPreviewCollage(frames)
+                ivPreview.setImageBitmap(collage)
+            } else {
+                Toast.makeText(this@MainActivity, "无法生成预览，请检查视频是否有效", Toast.LENGTH_LONG).show()
             }
 
             frames.forEach { it.release() }
             setUiProcessing(false, "预览完成")
         }
+    }
+
+    private fun createPreviewCollage(frames: List<Mat>): android.graphics.Bitmap {
+        if (frames.size == 1) {
+            val bitmap = android.graphics.Bitmap.createBitmap(
+                frames[0].cols(), frames[0].rows(),
+                android.graphics.Bitmap.Config.ARGB_8888
+            )
+            Utils.matToBitmap(frames[0], bitmap)
+            return bitmap
+        }
+
+        val frameW = frames[0].cols()
+        val frameH = frames[0].rows()
+        val collage = android.graphics.Bitmap.createBitmap(
+            frameW * frames.size, frameH,
+            android.graphics.Bitmap.Config.ARGB_8888
+        )
+        val canvas = android.graphics.Canvas(collage)
+        for ((index, mat) in frames.withIndex()) {
+            val bitmap = android.graphics.Bitmap.createBitmap(
+                frameW, frameH,
+                android.graphics.Bitmap.Config.ARGB_8888
+            )
+            Utils.matToBitmap(mat, bitmap)
+            canvas.drawBitmap(bitmap, (index * frameW).toFloat(), 0f, null)
+            bitmap.recycle()
+        }
+        return collage
     }
 
     private fun exportVideo() {
@@ -245,6 +324,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun collectParams(): MotionExtractParams {
+        val mode = when (rgMode.checkedRadioButtonId) {
+            R.id.rbColor -> OutputMode.COLOR
+            R.id.rbInverted -> OutputMode.INVERTED
+            else -> OutputMode.GRAYSCALE
+        }
         return MotionExtractParams(
             offsetFrames = sliderOffset.value.toInt(),
             invert = cbInvert.isChecked,
@@ -254,8 +338,99 @@ class MainActivity : AppCompatActivity() {
             glowIntensity = sliderGlowIntensity.value.toDouble(),
             contrast = sliderContrast.value.toDouble(),
             brightness = sliderBrightness.value.toDouble(),
-            mode = OutputMode.GRAYSCALE
+            mode = mode,
+            useRgbOffsets = cbRgbOffsets.isChecked,
+            rgbOffsets = RgbOffsets(
+                r = sliderOffsetR.value.toInt(),
+                g = sliderOffsetG.value.toInt(),
+                b = sliderOffsetB.value.toInt()
+            )
         )
+    }
+
+    private fun applyPreset(preset: Preset) {
+        when (preset) {
+            Preset.CLASSIC -> {
+                sliderOffset.value = 1f
+                cbInvert.isChecked = true
+                sliderOpacity.value = 0.5f
+                sliderBlur.value = 0f
+                sliderGlowRadius.value = 0f
+                sliderGlowIntensity.value = 0.5f
+                sliderContrast.value = 1f
+                sliderBrightness.value = 0f
+                rgMode.check(R.id.rbGrayscale)
+                cbRgbOffsets.isChecked = false
+                sliderOffsetR.value = 0f
+                sliderOffsetG.value = 0f
+                sliderOffsetB.value = 0f
+            }
+            Preset.NEON -> {
+                sliderOffset.value = 3f
+                cbInvert.isChecked = true
+                sliderOpacity.value = 0.6f
+                sliderBlur.value = 0f
+                sliderGlowRadius.value = 8f
+                sliderGlowIntensity.value = 1.2f
+                sliderContrast.value = 1.5f
+                sliderBrightness.value = 0f
+                rgMode.check(R.id.rbColor)
+                cbRgbOffsets.isChecked = true
+                sliderOffsetR.value = 2f
+                sliderOffsetG.value = 4f
+                sliderOffsetB.value = 6f
+            }
+            Preset.HIGH_CONTRAST -> {
+                sliderOffset.value = 2f
+                cbInvert.isChecked = true
+                sliderOpacity.value = 0.5f
+                sliderBlur.value = 0f
+                sliderGlowRadius.value = 0f
+                sliderGlowIntensity.value = 0.5f
+                sliderContrast.value = 3f
+                sliderBrightness.value = 0f
+                rgMode.check(R.id.rbGrayscale)
+                cbRgbOffsets.isChecked = false
+                sliderOffsetR.value = 0f
+                sliderOffsetG.value = 0f
+                sliderOffsetB.value = 0f
+            }
+            Preset.SOFT -> {
+                sliderOffset.value = 5f
+                cbInvert.isChecked = true
+                sliderOpacity.value = 0.4f
+                sliderBlur.value = 3f
+                sliderGlowRadius.value = 12f
+                sliderGlowIntensity.value = 0.4f
+                sliderContrast.value = 0.8f
+                sliderBrightness.value = 0.05f
+                rgMode.check(R.id.rbColor)
+                cbRgbOffsets.isChecked = true
+                sliderOffsetR.value = 3f
+                sliderOffsetG.value = 5f
+                sliderOffsetB.value = 7f
+            }
+            Preset.RESET -> {
+                sliderOffset.value = 1f
+                cbInvert.isChecked = true
+                sliderOpacity.value = 0.5f
+                sliderBlur.value = 0f
+                sliderGlowRadius.value = 0f
+                sliderGlowIntensity.value = 0.5f
+                sliderContrast.value = 1f
+                sliderBrightness.value = 0f
+                rgMode.check(R.id.rbGrayscale)
+                cbRgbOffsets.isChecked = false
+                sliderOffsetR.value = 0f
+                sliderOffsetG.value = 0f
+                sliderOffsetB.value = 0f
+            }
+        }
+        updateRgbOffsetSliderState()
+    }
+
+    private enum class Preset {
+        CLASSIC, NEON, HIGH_CONTRAST, SOFT, RESET
     }
 
     private fun setUiProcessing(isProcessing: Boolean, status: String) {
