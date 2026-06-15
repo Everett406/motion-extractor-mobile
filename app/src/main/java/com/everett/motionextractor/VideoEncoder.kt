@@ -22,7 +22,8 @@ class VideoEncoder(
     private val width: Int,
     private val height: Int,
     fps: Double,
-    bitrate: Int = width * height * 4
+    bitrate: Int = width * height * 4,
+    rotationDegrees: Int = 0
 ) : AutoCloseable {
 
     private val encoder: MediaCodec
@@ -51,6 +52,7 @@ class VideoEncoder(
         encoder.start()
 
         muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        muxer.setOrientationHint(rotationDegrees)
         yuvBuffer = ByteArray((width * height * 1.5).toInt())
     }
 

@@ -27,6 +27,7 @@ class VideoDecoder(context: Context, uri: Uri) : AutoCloseable {
     val fps: Double
     val frameCount: Int
     val durationMs: Long
+    val rotationDegrees: Int
 
     init {
         val pfd = context.contentResolver.openFileDescriptor(uri, "r")
@@ -43,6 +44,9 @@ class VideoDecoder(context: Context, uri: Uri) : AutoCloseable {
 
         width = format.getInteger(MediaFormat.KEY_WIDTH)
         height = format.getInteger(MediaFormat.KEY_HEIGHT)
+        rotationDegrees = if (format.containsKey(MediaFormat.KEY_ROTATION)) {
+            format.getInteger(MediaFormat.KEY_ROTATION)
+        } else 0
         durationMs = format.getLong(MediaFormat.KEY_DURATION) / 1000
         fps = if (format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
             format.getInteger(MediaFormat.KEY_FRAME_RATE).toDouble()

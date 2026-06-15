@@ -21,7 +21,8 @@ class VideoProcessor(private val context: Context) {
         val height: Int,
         val fps: Double,
         val frameCount: Int,
-        val durationMs: Long
+        val durationMs: Long,
+        val rotationDegrees: Int
     )
 
     /**
@@ -49,9 +50,12 @@ class VideoProcessor(private val context: Context) {
                 30.0
             }
             val frameCount = ((durationMs / 1000.0) * fps).toInt()
+            val rotationDegrees = if (format.containsKey(MediaFormat.KEY_ROTATION)) {
+                format.getInteger(MediaFormat.KEY_ROTATION)
+            } else 0
 
             extractor.release()
-            VideoInfo(width, height, fps, frameCount, durationMs)
+            VideoInfo(width, height, fps, frameCount, durationMs, rotationDegrees)
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -120,7 +124,8 @@ class VideoProcessor(private val context: Context) {
                 outputFile,
                 decoder.width,
                 decoder.height,
-                decoder.fps
+                decoder.fps,
+                rotationDegrees = decoder.rotationDegrees
             ).use { encoder ->
                 val buffer = ArrayDeque<Mat>()
                 val maxOffset = computeMaxOffset(params)

@@ -17,6 +17,7 @@ import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.VideoView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -28,6 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opencv.android.OpenCVLoader
 import org.opencv.android.Utils
+import org.opencv.core.Core
 import org.opencv.core.Mat
 
 class MainActivity : AppCompatActivity() {
@@ -36,7 +38,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnPreview: Button
     private lateinit var btnExport: Button
     private lateinit var btnSave: Button
+    private lateinit var btnPlay: Button
     private lateinit var ivPreview: ImageView
+    private lateinit var videoView: VideoView
     private lateinit var progressBar: ProgressBar
     private lateinit var tvStatus: TextView
     private lateinit var tvVideoInfo: TextView
@@ -60,6 +64,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sliderOffsetG: Slider
     private lateinit var sliderOffsetB: Slider
 
+    private lateinit var tvHeaderBasic: TextView
+    private lateinit var sectionBasic: View
+    private lateinit var tvHeaderEnhance: TextView
+    private lateinit var sectionEnhance: View
+    private lateinit var tvHeaderRgb: TextView
+    private lateinit var sectionRgb: View
+
     private lateinit var btnPresetClassic: MaterialButton
     private lateinit var btnPresetNeon: MaterialButton
     private lateinit var btnPresetHighContrast: MaterialButton
@@ -68,6 +79,7 @@ class MainActivity : AppCompatActivity() {
 
     private var selectedUri: Uri? = null
     private var lastOutputFile: java.io.File? = null
+    private var lastVideoRotation: Int = 0
     private var openCvReady = false
     private lateinit var videoProcessor: VideoProcessor
 
@@ -112,7 +124,9 @@ class MainActivity : AppCompatActivity() {
         btnPreview = findViewById(R.id.btnPreview)
         btnExport = findViewById(R.id.btnExport)
         btnSave = findViewById(R.id.btnSave)
+        btnPlay = findViewById(R.id.btnPlay)
         ivPreview = findViewById(R.id.ivPreview)
+        videoView = findViewById(R.id.videoView)
         progressBar = findViewById(R.id.progressBar)
         tvStatus = findViewById(R.id.tvStatus)
         tvVideoInfo = findViewById(R.id.tvVideoInfo)
@@ -136,6 +150,13 @@ class MainActivity : AppCompatActivity() {
         sliderOffsetG = findViewById(R.id.sliderOffsetG)
         sliderOffsetB = findViewById(R.id.sliderOffsetB)
 
+        tvHeaderBasic = findViewById(R.id.tvHeaderBasic)
+        sectionBasic = findViewById(R.id.sectionBasic)
+        tvHeaderEnhance = findViewById(R.id.tvHeaderEnhance)
+        sectionEnhance = findViewById(R.id.sectionEnhance)
+        tvHeaderRgb = findViewById(R.id.tvHeaderRgb)
+        sectionRgb = findViewById(R.id.sectionRgb)
+
         btnPresetClassic = findViewById(R.id.btnPresetClassic)
         btnPresetNeon = findViewById(R.id.btnPresetNeon)
         btnPresetHighContrast = findViewById(R.id.btnPresetHighContrast)
@@ -145,19 +166,26 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupListeners() {
         btnPickVideo.setOnClickListener {
+            resetVideoPlayer()
             pickVideoLauncher.launch("video/*")
         }
 
         btnPreview.setOnClickListener {
+            resetVideoPlayer()
             generatePreview()
         }
 
         btnExport.setOnClickListener {
+            resetVideoPlayer()
             exportVideo()
         }
 
         btnSave.setOnClickListener {
             saveToGallery()
+        }
+
+        btnPlay.setOnClickListener {
+            playExportedVideo()
         }
 
         cbRgbOffsets.setOnCheckedChangeListener { _, _ ->
@@ -169,6 +197,17 @@ class MainActivity : AppCompatActivity() {
         btnPresetHighContrast.setOnClickListener { applyPreset(Preset.HIGH_CONTRAST) }
         btnPresetSoft.setOnClickListener { applyPreset(Preset.SOFT) }
         btnPresetReset.setOnClickListener { applyPreset(Preset.RESET) }
+
+        tvHeaderBasic.setOnClickListener { toggleSection(tvHeaderBasic, sectionBasic) }
+        tvHeaderEnhance.setOnClickListener { toggleSection(tvHeaderEnhance, sectionEnhance) }
+        tvHeaderRgb.setOnClickListener { toggleSection(tvHeaderRgb, sectionRgb) }
+    }
+
+    private fun toggleSection(header: TextView, section: View) {
+        val isVisible = section.visibility == View.VISIBLE
+        section.visibility = if (isVisible) View.GONE else View.VISIBLE
+        val title = header.text.toString().substring(2)
+        header.text = "${if (isVisible) "▶" else "▼"} $title"
     }
 
     private fun updateRgbOffsetSliderState() {
@@ -184,7 +223,12 @@ class MainActivity : AppCompatActivity() {
                 videoProcessor.getVideoInfo(uri)
             }
             info?.let {
-                tvVideoInfo.text = "分辨率: ${it.width}×${it.height}  帧率: %.2f  时长: %.1fs".format(it.fps, it.durationMs / 1000.0)
+                lastVideoRotation = it.rotationDegrees
+                val orientation = when (it.rotationDegrees) {
+                    0, 180 -> ""
+                    else -> " 竖屏"
+                }
+                tvVideoInfo.text = "分辨率: ${it.width}×${it.height}  帧率: %.2f  时长: %.1fs$orientation".format(it.fps, it.durationMs / 1000.0)
                 tvVideoInfo.visibility = View.VISIBLE
             }
         }
@@ -214,23 +258,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun createPreviewCollage(frames: List<Mat>): android.graphics.Bitmap {
-        if (frames.size == 1) {
+        val rotatedFrames = frames.map { rotateMat(it, lastVideoRotation) }
+
+        if (rotatedFrames.size == 1) {
+            val mat = rotatedFrames[0]
             val bitmap = android.graphics.Bitmap.createBitmap(
-                frames[0].cols(), frames[0].rows(),
+                mat.cols(), mat.rows(),
                 android.graphics.Bitmap.Config.ARGB_8888
             )
-            Utils.matToBitmap(frames[0], bitmap)
+            Utils.matToBitmap(mat, bitmap)
+            if (mat !== frames[0]) mat.release()
             return bitmap
         }
 
-        val frameW = frames[0].cols()
-        val frameH = frames[0].rows()
+        val frameW = rotatedFrames[0].cols()
+        val frameH = rotatedFrames[0].rows()
         val collage = android.graphics.Bitmap.createBitmap(
-            frameW * frames.size, frameH,
+            frameW * rotatedFrames.size, frameH,
             android.graphics.Bitmap.Config.ARGB_8888
         )
         val canvas = android.graphics.Canvas(collage)
-        for ((index, mat) in frames.withIndex()) {
+        for ((index, mat) in rotatedFrames.withIndex()) {
             val bitmap = android.graphics.Bitmap.createBitmap(
                 frameW, frameH,
                 android.graphics.Bitmap.Config.ARGB_8888
@@ -238,8 +286,18 @@ class MainActivity : AppCompatActivity() {
             Utils.matToBitmap(mat, bitmap)
             canvas.drawBitmap(bitmap, (index * frameW).toFloat(), 0f, null)
             bitmap.recycle()
+            if (mat !== frames[index]) mat.release()
         }
         return collage
+    }
+
+    private fun rotateMat(mat: Mat, degrees: Int): Mat {
+        return when (degrees) {
+            90 -> Mat().also { Core.rotate(mat, it, Core.ROTATE_90_CLOCKWISE) }
+            180 -> Mat().also { Core.rotate(mat, it, Core.ROTATE_180) }
+            270 -> Mat().also { Core.rotate(mat, it, Core.ROTATE_90_COUNTER_CLOCKWISE) }
+            else -> mat
+        }
     }
 
     private fun exportVideo() {
@@ -262,10 +320,9 @@ class MainActivity : AppCompatActivity() {
                 lastOutputFile = outputFile
                 btnSave.visibility = View.VISIBLE
                 btnSave.isEnabled = true
+                btnPlay.visibility = View.VISIBLE
+                btnPlay.isEnabled = true
                 setUiProcessing(false, "导出完成: ${outputFile.name}")
-
-                // Auto share intent.
-                shareFile(outputFile)
             } catch (e: Exception) {
                 e.printStackTrace()
                 setUiProcessing(false, "导出失败: ${e.message}")
@@ -323,6 +380,33 @@ class MainActivity : AppCompatActivity() {
         startActivity(Intent.createChooser(intent, "分享视频"))
     }
 
+    private fun resetVideoPlayer() {
+        videoView.stopPlayback()
+        videoView.visibility = View.GONE
+        ivPreview.visibility = View.VISIBLE
+    }
+
+    private fun playExportedVideo() {
+        val file = lastOutputFile ?: return
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            this,
+            "${packageName}.fileprovider",
+            file
+        )
+        ivPreview.visibility = View.GONE
+        videoView.visibility = View.VISIBLE
+        videoView.setVideoURI(uri)
+        videoView.setOnPreparedListener { mediaPlayer ->
+            mediaPlayer.isLooping = true
+            videoView.start()
+        }
+        videoView.setOnErrorListener { _, what, extra ->
+            Toast.makeText(this, "播放失败: $what/$extra", Toast.LENGTH_SHORT).show()
+            resetVideoPlayer()
+            true
+        }
+    }
+
     private fun collectParams(): MotionExtractParams {
         val mode = when (rgMode.checkedRadioButtonId) {
             R.id.rbColor -> OutputMode.COLOR
@@ -351,13 +435,13 @@ class MainActivity : AppCompatActivity() {
     private fun applyPreset(preset: Preset) {
         when (preset) {
             Preset.CLASSIC -> {
-                sliderOffset.value = 1f
+                sliderOffset.value = 3f
                 cbInvert.isChecked = true
                 sliderOpacity.value = 0.5f
                 sliderBlur.value = 0f
                 sliderGlowRadius.value = 0f
                 sliderGlowIntensity.value = 0.5f
-                sliderContrast.value = 1f
+                sliderContrast.value = 1.5f
                 sliderBrightness.value = 0f
                 rgMode.check(R.id.rbGrayscale)
                 cbRgbOffsets.isChecked = false
@@ -411,13 +495,13 @@ class MainActivity : AppCompatActivity() {
                 sliderOffsetB.value = 7f
             }
             Preset.RESET -> {
-                sliderOffset.value = 1f
+                sliderOffset.value = 3f
                 cbInvert.isChecked = true
                 sliderOpacity.value = 0.5f
                 sliderBlur.value = 0f
                 sliderGlowRadius.value = 0f
                 sliderGlowIntensity.value = 0.5f
-                sliderContrast.value = 1f
+                sliderContrast.value = 1.5f
                 sliderBrightness.value = 0f
                 rgMode.check(R.id.rbGrayscale)
                 cbRgbOffsets.isChecked = false

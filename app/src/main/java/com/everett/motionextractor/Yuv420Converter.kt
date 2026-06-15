@@ -20,14 +20,31 @@ object Yuv420Converter {
     fun imageToBgrMat(image: Image): Mat {
         val width = image.width
         val height = image.height
-        val i420 = imageToI420(image)
+        val yPlane = image.planes[0]
+        val uPlane = image.planes[1]
+        val vPlane = image.planes[2]
 
-        val yuvMat = Mat((height * 1.5).toInt(), width, CvType.CV_8UC1)
-        yuvMat.put(0, 0, i420)
-        val bgr = Mat()
-        Imgproc.cvtColor(yuvMat, bgr, Imgproc.COLOR_YUV2BGR_I420)
-        yuvMat.release()
-        return bgr
+        return if (uPlane.pixelStride == 1 && vPlane.pixelStride == 1) {
+            // Planar source: build I420 and convert.
+            val i420 = ByteArray((width * height * 1.5).toInt())
+            readPlane(yPlane, i420, 0, width * height, width)
+            readPlane(uPlane, i420, width * height, width * height / 4, width / 2)
+            readPlane(vPlane, i420, width * height * 5 / 4, width * height / 4, width / 2)
+            i420ToBgr(i420, width, height)
+        } else if (isSharedInterleaved(uPlane, vPlane)) {
+            // Shared semi-planar source: build NV12 or NV21 and convert.
+            val uFirst = uPlane.buffer.position() <= vPlane.buffer.position()
+            val nv = ByteArray((width * height * 1.5).toInt())
+            val uvOffset = width * height
+            readPlane(yPlane, nv, 0, width * height, width)
+            copySharedUvRows(uPlane, nv, uvOffset, width)
+            val code = if (uFirst) Imgproc.COLOR_YUV2BGR_NV12 else Imgproc.COLOR_YUV2BGR_NV21
+            nvToBgr(nv, width, height, code)
+        } else {
+            // Generic semi-planar source: sample to I420.
+            val i420 = imageToI420Generic(image)
+            i420ToBgr(i420, width, height)
+        }
     }
 
     /**
@@ -67,42 +84,91 @@ object Yuv420Converter {
             // Planar target (I420 / YV12-like)
             writePlane(uPlane, i420, ySize, ySize / 4, uvWidth)
             writePlane(vPlane, i420, ySize + ySize / 4, ySize / 4, uvWidth)
-        } else {
-            // Semi-planar target: interleave U and V rows.
+        } else if (isSharedInterleaved(uPlane, vPlane)) {
+            // Shared semi-planar target: copy interleaved UV rows directly.
+            val uFirst = uPlane.buffer.position() <= vPlane.buffer.position()
             val uOffset = ySize
             val vOffset = ySize + ySize / 4
             val uvRowBytes = ByteArray(width)
-            val sharedBuffer = uPlane.buffer === vPlane.buffer
-            val uFirst = sharedBuffer && uPlane.buffer.position() <= vPlane.buffer.position()
-
             for (row in 0 until uvHeight) {
-                val uSrc = uOffset + row * uvWidth
-                val vSrc = vOffset + row * uvWidth
                 for (col in 0 until uvWidth) {
-                    uvRowBytes[col * 2] = i420[uSrc + col]
-                    uvRowBytes[col * 2 + 1] = i420[vSrc + col]
-                }
-
-                if (sharedBuffer) {
-                    val basePos = row * uPlane.rowStride + if (uFirst) 0 else 1
-                    uPlane.buffer.position(basePos)
-                    uPlane.buffer.put(uvRowBytes)
-                } else {
-                    for (col in 0 until uvWidth) {
-                        val uIndex = row * uPlane.rowStride + col * uPlane.pixelStride
-                        val vIndex = row * vPlane.rowStride + col * vPlane.pixelStride
-                        uPlane.buffer.put(uIndex, uvRowBytes[col * 2])
-                        vPlane.buffer.put(vIndex, uvRowBytes[col * 2 + 1])
+                    if (uFirst) {
+                        uvRowBytes[col * 2] = i420[uOffset + row * uvWidth + col]
+                        uvRowBytes[col * 2 + 1] = i420[vOffset + row * uvWidth + col]
+                    } else {
+                        uvRowBytes[col * 2] = i420[vOffset + row * uvWidth + col]
+                        uvRowBytes[col * 2 + 1] = i420[uOffset + row * uvWidth + col]
                     }
+                }
+                val basePos = row * uPlane.rowStride + if (uFirst) 0 else 1
+                uPlane.buffer.position(basePos)
+                uPlane.buffer.put(uvRowBytes)
+            }
+        } else {
+            // Generic semi-planar target: interleave U and V rows.
+            val uOffset = ySize
+            val vOffset = ySize + ySize / 4
+            for (row in 0 until uvHeight) {
+                for (col in 0 until uvWidth) {
+                    val uIndex = row * uPlane.rowStride + col * uPlane.pixelStride
+                    val vIndex = row * vPlane.rowStride + col * vPlane.pixelStride
+                    uPlane.buffer.put(uIndex, i420[uOffset + row * uvWidth + col])
+                    vPlane.buffer.put(vIndex, i420[vOffset + row * uvWidth + col])
                 }
             }
         }
     }
 
+    private fun i420ToBgr(i420: ByteArray, width: Int, height: Int): Mat {
+        val yuvMat = Mat((height * 1.5).toInt(), width, CvType.CV_8UC1)
+        yuvMat.put(0, 0, i420)
+        val bgr = Mat()
+        Imgproc.cvtColor(yuvMat, bgr, Imgproc.COLOR_YUV2BGR_I420)
+        yuvMat.release()
+        return bgr
+    }
+
+    private fun nvToBgr(nv: ByteArray, width: Int, height: Int, code: Int): Mat {
+        val yuvMat = Mat((height * 1.5).toInt(), width, CvType.CV_8UC1)
+        yuvMat.put(0, 0, nv)
+        val bgr = Mat()
+        Imgproc.cvtColor(yuvMat, bgr, code)
+        yuvMat.release()
+        return bgr
+    }
+
     /**
-     * Convert any YUV_420_888 [Image] to a packed I420 byte array.
+     * Copy interleaved UV rows from a shared UV plane into a contiguous
+     * NV12/NV21 byte array.
      */
-    private fun imageToI420(image: Image): ByteArray {
+    private fun copySharedUvRows(plane: Image.Plane, dst: ByteArray, dstOffset: Int, width: Int) {
+        val rowBytes = ByteArray(width)
+        val uvHeight = dst.size / width / 2
+        for (row in 0 until uvHeight) {
+            plane.buffer.position(row * plane.rowStride)
+            plane.buffer.get(rowBytes, 0, width)
+            System.arraycopy(rowBytes, 0, dst, dstOffset + row * width, width)
+        }
+    }
+
+    /**
+     * Heuristic to detect whether U and V planes share the same interleaved
+     * buffer (the common Android YUV_420_888 semi-planar case).
+     */
+    private fun isSharedInterleaved(uPlane: Image.Plane, vPlane: Image.Plane): Boolean {
+        if (uPlane === vPlane) return true
+        if (uPlane.rowStride != vPlane.rowStride) return false
+        if (uPlane.pixelStride != 2 || vPlane.pixelStride != 2) return false
+        val uPos = uPlane.buffer.position()
+        val vPos = vPlane.buffer.position()
+        return kotlin.math.abs(uPos - vPos) == 1
+    }
+
+    /**
+     * Fallback generic converter for semi-planar images that don't use a
+     * shared UV buffer.
+     */
+    private fun imageToI420Generic(image: Image): ByteArray {
         val width = image.width
         val height = image.height
         val ySize = width * height
@@ -110,66 +176,19 @@ object Yuv420Converter {
         val uvHeight = height / 2
         val i420 = ByteArray(ySize + ySize / 2)
 
-        val yPlane = image.planes[0]
-        val uPlane = image.planes[1]
-        val vPlane = image.planes[2]
+        readPlane(image.planes[0], i420, 0, ySize, width)
 
-        // Y plane
-        readPlane(yPlane, i420, 0, ySize, width)
-
-        if (uPlane.pixelStride == 1 && vPlane.pixelStride == 1) {
-            // Planar source
-            readPlane(uPlane, i420, ySize, ySize / 4, uvWidth)
-            readPlane(vPlane, i420, ySize + ySize / 4, ySize / 4, uvWidth)
-        } else if (uPlane.pixelStride == 2 && vPlane.pixelStride == 2 &&
-            areBuffersInterleaved(uPlane, vPlane)
-        ) {
-            // Shared interleaved UV buffer: copy whole rows directly.
-            val shared = if (uPlane.buffer.position() <= vPlane.buffer.position()) uPlane.buffer else vPlane.buffer
-            val firstIsU = uPlane.buffer.position() <= vPlane.buffer.position()
-            val shift = if (firstIsU) 0 else 1
-            val uOffset = ySize
-            val vOffset = ySize + ySize / 4
-            val rowBytes = ByteArray(width)
-            for (row in 0 until uvHeight) {
-                shared.position(row * uPlane.rowStride + shift)
-                shared.get(rowBytes, 0, width)
-                for (col in 0 until uvWidth) {
-                    if (firstIsU) {
-                        i420[uOffset + row * uvWidth + col] = rowBytes[col * 2]
-                        i420[vOffset + row * uvWidth + col] = rowBytes[col * 2 + 1]
-                    } else {
-                        i420[vOffset + row * uvWidth + col] = rowBytes[col * 2]
-                        i420[uOffset + row * uvWidth + col] = rowBytes[col * 2 + 1]
-                    }
-                }
-            }
-        } else {
-            // Generic semi-planar source: sample U and V independently.
-            val uOffset = ySize
-            val vOffset = ySize + ySize / 4
-            for (row in 0 until uvHeight) {
-                for (col in 0 until uvWidth) {
-                    val uIndex = row * uPlane.rowStride + col * uPlane.pixelStride
-                    val vIndex = row * vPlane.rowStride + col * vPlane.pixelStride
-                    i420[uOffset + row * uvWidth + col] = uPlane.buffer.get(uIndex)
-                    i420[vOffset + row * uvWidth + col] = vPlane.buffer.get(vIndex)
-                }
+        val uOffset = ySize
+        val vOffset = ySize + ySize / 4
+        for (row in 0 until uvHeight) {
+            for (col in 0 until uvWidth) {
+                val uIndex = row * image.planes[1].rowStride + col * image.planes[1].pixelStride
+                val vIndex = row * image.planes[2].rowStride + col * image.planes[2].pixelStride
+                i420[uOffset + row * uvWidth + col] = image.planes[1].buffer.get(uIndex)
+                i420[vOffset + row * uvWidth + col] = image.planes[2].buffer.get(vIndex)
             }
         }
-
         return i420
-    }
-
-    /**
-     * Heuristic to detect whether U and V planes share the same interleaved
-     * buffer (the common Android YUV_420_888 semi-planar case).
-     */
-    private fun areBuffersInterleaved(uPlane: Image.Plane, vPlane: Image.Plane): Boolean {
-        if (uPlane.rowStride != vPlane.rowStride) return false
-        val uPos = uPlane.buffer.position()
-        val vPos = vPlane.buffer.position()
-        return kotlin.math.abs(uPos - vPos) == 1
     }
 
     /**
