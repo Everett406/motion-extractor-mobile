@@ -4,6 +4,7 @@ import android.net.Uri
 import com.everett.motionextractor.MotionExtractParams
 import com.everett.motionextractor.OutputMode
 import com.everett.motionextractor.RgbOffsets
+import kotlinx.coroutines.Job
 import java.io.File
 
 data class UiState(
@@ -34,7 +35,13 @@ data class UiState(
     // Sections
     val basicExpanded: Boolean = true,
     val enhanceExpanded: Boolean = false,
-    val rgbExpanded: Boolean = false
+    val rgbExpanded: Boolean = false,
+
+    // Fixed: current preset tracking
+    val currentPreset: Preset? = null,
+
+    // Export job for cancellation
+    val exportJob: Job? = null
 )
 
 data class VideoInfoSummary(

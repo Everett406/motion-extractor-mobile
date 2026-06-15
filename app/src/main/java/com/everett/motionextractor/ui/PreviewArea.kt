@@ -28,26 +28,23 @@ fun PreviewArea(
     bitmaps: List<Bitmap>,
     showPlayer: Boolean,
     player: Player?,
+    videoInfo: VideoInfoSummary?,
     modifier: Modifier = Modifier
 ) {
+    // Fixed: Adaptive aspect ratio based on video orientation
+    val aspectRatio = rememberVideoAspectRatio(videoInfo)
+    
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .aspectRatio(16f / 9f)
+            .aspectRatio(aspectRatio)
             .background(Surface),
         contentAlignment = Alignment.Center
     ) {
         if (showPlayer && player != null) {
-            AndroidView(
-                factory = { context ->
-                    PlayerView(context).apply {
-                        this.player = player
-                        useController = true
-                    }
-                },
-                update = { view ->
-                    view.player = player
-                },
+            // Fixed: Use remember to avoid PlayerView recreation
+            PlayerViewContainer(
+                player = player,
                 modifier = Modifier.fillMaxSize()
             )
         } else if (bitmaps.isNotEmpty()) {
@@ -79,5 +76,50 @@ fun PreviewArea(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun rememberVideoAspectRatio(videoInfo: VideoInfoSummary?): Float {
+    return if (videoInfo != null) {
+        val isPortrait = videoInfo.rotationDegrees == 90 || videoInfo.rotationDegrees == 270
+        if (isPortrait) {
+            // Portrait: 9:16 or actual ratio
+            videoInfo.height.toFloat() / videoInfo.width.coerceAtLeast(1)
+        } else {
+            // Landscape: 16:9 or actual ratio
+            videoInfo.width.toFloat() / videoInfo.height.coerceAtLeast(1)
+        }
+    } else {
+        // Default 16:9 when no video selected
+        16f / 9f
+    }
+}
+
+@Composable
+private fun PlayerViewContainer(
+    player: Player,
+    modifier: Modifier = Modifier
+) {
+    // Fixed: Remember PlayerView to avoid recreation on recomposition
+    androidx.compose.runtime.remember {
+        var playerViewRef: PlayerView? = null
+        
+        AndroidView(
+            factory = { context ->
+                PlayerView(context).apply {
+                    this.player = player
+                    useController = true
+                    playerViewRef = this
+                }
+            },
+            update = { view ->
+                // Only update player if changed
+                if (view.player != player) {
+                    view.player = player
+                }
+            },
+            modifier = modifier
+        )
     }
 }

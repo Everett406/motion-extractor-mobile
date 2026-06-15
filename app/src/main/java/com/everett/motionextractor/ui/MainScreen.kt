@@ -2,6 +2,7 @@ package com.everett.motionextractor.ui
 
 import android.graphics.Bitmap
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -25,12 +27,16 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.LifecycleCoroutineScope
 import com.everett.motionextractor.OutputMode
 import com.everett.motionextractor.VideoProcessor
+import com.everett.motionextractor.ui.theme.Background
 import com.everett.motionextractor.ui.theme.GlassTint
+import com.everett.motionextractor.ui.theme.SurfaceElevated
 import com.everett.motionextractor.ui.theme.TextSecondary
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.haze
 import dev.chrisbanes.haze.hazeChild
+import io.github.alexzhirkevich.cupertino.CupertinoButton
+import io.github.alexzhirkevich.cupertino.CupertinoButtonDefaults
 import io.github.alexzhirkevich.cupertino.CupertinoScaffold
 import io.github.alexzhirkevich.cupertino.CupertinoText
 import io.github.alexzhirkevich.cupertino.CupertinoTopAppBar
@@ -105,43 +111,41 @@ fun MainScreen(
         },
         modifier = modifier
     ) { paddingValues ->
+        // Fixed: Background is now clear, only the floating panel uses hazeChild
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .haze(
-                    state = hazeState,
-                    style = HazeStyle(
-                        tint = GlassTint,
-                        blurRadius = 24.dp,
-                        noiseFactor = 0.15f
-                    )
-                )
+                .background(Background)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
             ) {
+                // Preview area with adaptive aspect ratio
                 PreviewArea(
                     bitmaps = state.previewBitmaps,
                     showPlayer = state.showPlayer,
                     player = exoPlayer,
+                    videoInfo = state.videoInfo,
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
-
+                // Video info display
                 state.videoInfo?.let { info ->
+                    Spacer(modifier = Modifier.height(12.dp))
                     val orientation = if (info.rotationDegrees == 90 || info.rotationDegrees == 270) " 竖屏" else ""
                     CupertinoText(
                         text = "分辨率: ${info.width}×${info.height}  帧率: %.2f  时长: %.1fs$orientation".format(info.fps, info.durationMs / 1000.0),
                         color = TextSecondary,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
                 }
 
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Action buttons
                 ActionBar(
                     onPickVideo = onPickVideo,
                     onPreview = {
@@ -168,24 +172,38 @@ fun MainScreen(
                     },
                     onExport = {
                         val uri = state.selectedUri ?: return@ActionBar
-                        state = state.copy(isProcessing = true, statusText = "正在导出视频...", progress = 0f, showPlayer = false)
-                        lifecycleScope.launch {
+                        state = state.copy(
+                            isProcessing = true,
+                            statusText = "正在导出视频...",
+                            progress = 0f,
+                            showPlayer = false
+                        )
+                        val job = lifecycleScope.launch {
                             try {
                                 val outputFile = withContext(Dispatchers.IO) {
                                     videoProcessor.exportVideo(uri, state.toMotionExtractParams()) { progress ->
-                                        state = state.copy(progress = progress, statusText = "导出进度: ${(progress * 100).toInt()}%")
+                                        state = state.copy(
+                                            progress = progress,
+                                            statusText = "导出进度: ${(progress * 100).toInt()}%"
+                                        )
                                     }
                                 }
                                 state = state.copy(
                                     outputFile = outputFile,
                                     isProcessing = false,
-                                    statusText = "导出完成: ${outputFile.name}"
+                                    statusText = "导出完成: ${outputFile.name}",
+                                    exportJob = null
                                 )
                             } catch (e: Exception) {
                                 e.printStackTrace()
-                                state = state.copy(isProcessing = false, statusText = "导出失败: ${e.message}")
+                                state = state.copy(
+                                    isProcessing = false,
+                                    statusText = "导出失败: ${e.message}",
+                                    exportJob = null
+                                )
                             }
                         }
+                        state = state.copy(exportJob = job)
                     },
                     onSave = {
                         state.outputFile?.let { onSaveToGallery(it) }
@@ -193,13 +211,23 @@ fun MainScreen(
                     onPlay = {
                         state = state.copy(showPlayer = true)
                     },
+                    onCancelExport = {
+                        state.exportJob?.cancel()
+                        state = state.copy(
+                            isProcessing = false,
+                            statusText = "导出已取消",
+                            exportJob = null
+                        )
+                    },
                     canPreview = openCvReady && state.selectedUri != null,
                     canExport = openCvReady && state.selectedUri != null,
                     canSave = state.outputFile != null,
                     canPlay = state.outputFile != null,
-                    isProcessing = state.isProcessing
+                    isProcessing = state.isProcessing,
+                    progress = state.progress
                 )
 
+                // Status and progress
                 if (state.statusText.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(8.dp))
                     CupertinoText(
@@ -210,21 +238,33 @@ fun MainScreen(
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
+            }
 
+            // Fixed: Parameter panel as floating bottom sheet with hazeChild
+            // Only the panel uses hazeChild, background stays clear
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .hazeChild(
+                        state = hazeState,
+                        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                        style = HazeStyle(
+                            tint = GlassTint,
+                            blurRadius = 24.dp,
+                            noiseFactor = 0.15f
+                        )
+                    )
+                    .background(SurfaceElevated.copy(alpha = 0.7f))
+            ) {
                 ParameterPanel(
                     state = state,
                     onStateChange = { state = it },
                     onPreset = { preset ->
-                        state = applyPreset(state, preset)
+                        state = applyPreset(state, preset).copy(currentPreset = preset)
                     },
-                    modifier = Modifier.hazeChild(
-                        state = hazeState,
-                        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                        style = HazeStyle.Unspecified
-                    )
+                    modifier = Modifier.padding(16.dp)
                 )
-
-                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
@@ -259,7 +299,8 @@ private fun applyPreset(state: UiState, preset: Preset): UiState = when (preset)
         offsetFrames = 3f, invert = true, opacity = 0.5f,
         blurRadius = 0f, glowRadius = 0f, glowIntensity = 0.5f,
         contrast = 1.5f, brightness = 0f, outputMode = OutputMode.GRAYSCALE,
-        useRgbOffsets = false, rgbOffsetR = 0f, rgbOffsetG = 0f, rgbOffsetB = 0f
+        useRgbOffsets = false, rgbOffsetR = 0f, rgbOffsetG = 0f, rgbOffsetB = 0f,
+        currentPreset = null
     )
 }
 

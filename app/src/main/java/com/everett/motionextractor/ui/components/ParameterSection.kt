@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.everett.motionextractor.ui.theme.SurfaceElevated
 import com.everett.motionextractor.ui.theme.TextPrimary
 import com.everett.motionextractor.ui.theme.TextSecondary
 import io.github.alexzhirkevich.cupertino.CupertinoText
@@ -21,24 +22,31 @@ fun ParameterSection(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onToggle)
-                .padding(vertical = 12.dp),
+                .padding(vertical = 12.dp, horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Fixed: Better arrow indicator with color feedback
             CupertinoText(
-                text = "${if (expanded) "▼" else "▶"} $title",
+                text = if (expanded) "▼" else "▶",
+                color = TextSecondary,
+                modifier = Modifier.padding(end = 8.dp)
+            )
+            CupertinoText(
+                text = title,
                 color = TextPrimary,
                 modifier = Modifier.weight(1f)
             )
         }
-        if (expanded) {
-            Column(modifier = Modifier.padding(bottom = 8.dp)) {
-                content()
-            }
-        }
+        // Content is now handled by AnimatedVisibility in ParameterPanel
+        content()
     }
 }
