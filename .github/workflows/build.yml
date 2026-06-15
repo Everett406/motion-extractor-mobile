@@ -7,6 +7,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -48,8 +51,27 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: motion-extractor-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Create Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Motion Extractor v1.0.${{ github.run_number }}
+          draft: false
+          prerelease: false
+          files: app/build/outputs/apk/debug/app-debug.apk
+          body: |
+            自动构建的 Android APK（Debug）。
+
+            安装后从相册选择视频，调节参数即可预览/导出「运动提取」效果。
+
+            构建时间：${{ github.event.head_commit.timestamp }}
+            提交：${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
