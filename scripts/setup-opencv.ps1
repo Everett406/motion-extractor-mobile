@@ -72,6 +72,9 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    sourceSets["main"].java.srcDirs("src")
+    sourceSets["main"].manifest.srcFile("AndroidManifest.xml")
 }
 "@
 $BuildGradlePath = Join-Path $OpencvModuleDir "sdk\build.gradle.kts"
