@@ -68,7 +68,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     sourceSets["main"].java.srcDirs("src")
+    sourceSets["main"].res.srcDirs("res")
     sourceSets["main"].manifest.srcFile("AndroidManifest.xml")
 }
 EOF
