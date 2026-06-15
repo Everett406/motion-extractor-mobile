@@ -49,6 +49,7 @@ class MainActivity : AppCompatActivity() {
 
     private var selectedUri: Uri? = null
     private var lastOutputFile: java.io.File? = null
+    private var openCvReady = false
     private lateinit var videoProcessor: VideoProcessor
 
     private val pickVideoLauncher = registerForActivityResult(
@@ -56,8 +57,10 @@ class MainActivity : AppCompatActivity() {
     ) { uri ->
         if (uri != null) {
             selectedUri = uri
-            btnPreview.isEnabled = true
-            btnExport.isEnabled = true
+            if (openCvReady) {
+                btnPreview.isEnabled = true
+                btnExport.isEnabled = true
+            }
             showVideoInfo(uri)
         }
     }
@@ -74,14 +77,9 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        try {
-            System.loadLibrary("opencv_java4")
-        } catch (e: UnsatisfiedLinkError) {
-            e.printStackTrace()
-        }
-
-        if (!OpenCVLoader.initDebug()) {
-            Toast.makeText(this, "OpenCV 初始化失败", Toast.LENGTH_LONG).show()
+        openCvReady = initializeOpenCV()
+        if (!openCvReady) {
+            ErrorReporter.showErrorDialog(this, ErrorReporter.getLogs())
         }
 
         videoProcessor = VideoProcessor(this)
@@ -262,8 +260,8 @@ class MainActivity : AppCompatActivity() {
         tvStatus.text = status
 
         btnPickVideo.isEnabled = !isProcessing
-        btnPreview.isEnabled = !isProcessing && selectedUri != null
-        btnExport.isEnabled = !isProcessing && selectedUri != null
+        btnPreview.isEnabled = openCvReady && !isProcessing && selectedUri != null
+        btnExport.isEnabled = openCvReady && !isProcessing && selectedUri != null
     }
 
     private fun checkStoragePermission(): Boolean {
@@ -283,5 +281,58 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.READ_EXTERNAL_STORAGE
         }
         requestPermissionLauncher.launch(permission)
+    }
+
+    private fun initializeOpenCV(): Boolean {
+        val sb = StringBuilder()
+        sb.appendLine("=== OpenCV Init Debug ===")
+        sb.appendLine("Supported ABIs: ${Build.SUPPORTED_ABIS?.contentToString()}")
+
+        // Method 1: initLocal (bundled OpenCV).
+        try {
+            val localOk = OpenCVLoader.initLocal()
+            sb.appendLine("initLocal() returned: $localOk")
+            if (localOk) {
+                ErrorReporter.log(sb.toString())
+                return true
+            }
+        } catch (e: Exception) {
+            sb.appendLine("initLocal() threw: ${e.stackTraceToString()}")
+        }
+
+        // Method 2: explicit loadLibrary then initLocal.
+        val libNames = listOf("opencv_java4", "opencv_java4100", "opencv_java")
+        for (lib in libNames) {
+            try {
+                System.loadLibrary(lib)
+                sb.appendLine("System.loadLibrary('$lib') succeeded")
+                val localOk = OpenCVLoader.initLocal()
+                sb.appendLine("initLocal() after loadLibrary('$lib') returned: $localOk")
+                if (localOk) {
+                    ErrorReporter.log(sb.toString())
+                    return true
+                }
+            } catch (e: UnsatisfiedLinkError) {
+                sb.appendLine("System.loadLibrary('$lib') failed: ${e.message}")
+            } catch (e: Exception) {
+                sb.appendLine("System.loadLibrary('$lib') threw: ${e.stackTraceToString()}")
+            }
+        }
+
+        // Method 3: initDebug (last resort, deprecated).
+        try {
+            val debugOk = OpenCVLoader.initDebug()
+            sb.appendLine("initDebug() returned: $debugOk")
+            if (debugOk) {
+                ErrorReporter.log(sb.toString())
+                return true
+            }
+        } catch (e: Exception) {
+            sb.appendLine("initDebug() threw: ${e.stackTraceToString()}")
+        }
+
+        sb.appendLine("All OpenCV init methods failed.")
+        ErrorReporter.log(sb.toString())
+        return false
     }
 }
