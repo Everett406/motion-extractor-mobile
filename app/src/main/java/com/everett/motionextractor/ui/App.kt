@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,8 +30,15 @@ fun MotionExtractorApp(
     openCvReady: Boolean
 ) {
     val navController = rememberNavController()
-    var currentUri by remember { mutableStateOf<Uri?>(selectedUri) }
+    var currentUri by remember { mutableStateOf<Uri?>(null) }
     var outputFile by remember { mutableStateOf<File?>(null) }
+
+    // When selectedUri changes from outside (e.g. activity result), update currentUri
+    LaunchedEffect(selectedUri) {
+        selectedUri?.let {
+            currentUri = it
+        }
+    }
 
     NavHost(
         navController = navController,
@@ -62,9 +70,7 @@ fun MotionExtractorApp(
     ) {
         composable(Screen.Home.route) {
             HomeScreen(
-                onPickVideo = {
-                    onPickVideo()
-                },
+                onPickVideo = onPickVideo,
                 onVideoSelected = { uri ->
                     currentUri = uri
                     navController.navigate(Screen.Editor.route)

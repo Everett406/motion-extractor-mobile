@@ -13,8 +13,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.util.UnstableApi
 import com.everett.motionextractor.ui.ExoPlayerManager
@@ -29,6 +29,9 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var videoProcessor: VideoProcessor
     private lateinit var exoPlayerManager: ExoPlayerManager
+
+    // Use MutableState to hold selected URI - survives recomposition
+    private val selectedUriState = mutableStateOf<Uri?>(null)
 
     private var pendingSaveFile: File? = null
     private val openCvReady: Boolean
@@ -50,10 +53,8 @@ class MainActivity : ComponentActivity() {
     private val pickVideoLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let {
-            // Recreate content to pass the new URI
-            setContentWithUri(it)
-        }
+        // Update state instead of recreating content
+        selectedUriState.value = uri
     }
 
     @OptIn(UnstableApi::class)
@@ -63,11 +64,6 @@ class MainActivity : ComponentActivity() {
         videoProcessor = VideoProcessor(this)
         exoPlayerManager = ExoPlayerManager(this)
 
-        setContentWithUri(null)
-    }
-
-    @OptIn(UnstableApi::class)
-    private fun setContentWithUri(uri: Uri?) {
         setContent {
             MotionExtractorTheme {
                 CompositionLocalProvider(LocalExoPlayer provides exoPlayerManager.player) {
@@ -76,7 +72,7 @@ class MainActivity : ComponentActivity() {
                         videoProcessor = videoProcessor,
                         onPickVideo = { pickVideoLauncher.launch("video/*") },
                         onSaveToGallery = { file -> saveToGallery(file) },
-                        selectedUri = uri,
+                        selectedUri = selectedUriState.value,
                         openCvReady = openCvReady
                     )
                 }
