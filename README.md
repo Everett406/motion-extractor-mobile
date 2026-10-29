@@ -1,3 +1,9 @@
+---
+
+> [!NOTE]
+> **本仓库已迁移至 Gitee**：<https://gitee.com/Everett5678/motion-extractor-mobile>
+> GitHub 端仅作只读归档，新代码请推送到 Gitee。
+
 # Motion Extractor Mobile
 
 Android APK 版「运动提取」视频处理工具。
