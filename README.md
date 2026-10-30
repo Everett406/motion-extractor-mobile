@@ -78,7 +78,7 @@ motion-extractor-mobile/
 ### 1. 克隆仓库
 
 ```bash
-git clone https://github.com/Everett406/motion-extractor-mobile.git
+git clone https://gitee.com/Everett5678/motion-extractor-mobile.git
 cd motion-extractor-mobile
 ```
 
